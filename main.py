@@ -1,7 +1,7 @@
 import logging
 import os
 
-from telegram import Update  # <-- Обовʼязковий імпорт!
+from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
