@@ -1,111 +1,78 @@
-import os
+import asyncio
 import logging
-from dotenv import load_dotenv
+import os
 from flask import Flask, request
-from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import (
-    Application,
-    CallbackQueryHandler,
+    ApplicationBuilder,
     CommandHandler,
+    CallbackContext,
     ContextTypes,
     MessageHandler,
     filters,
 )
-from handlers.wallet_handler import (
-    prompt_wallet_address,
-    prompt_wallet_removal,
-    handle_text as wallet_handle_text,
-    handle_callback_query as wallet_callback,
+
+from wallet_handler import handle_wallet_message
+from token_handler import handle_token_message
+from scheduler import start_scheduler
+
+# Налаштування логування
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
-from handlers.token_handler import (
-    prompt_token_wallet_choice,
-    prompt_token_removal,
-    show_user_data,
-    handle_text as token_handle_text,
-    handle_callback_query as token_callback,
-)
-from utils.scheduler import start_scheduler
 
-# Load environment variables
-load_dotenv()
+# Ініціалізація Flask
+flask_app = Flask(__name__)
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+# Отримання токена з середовища
+TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL")  # має бути https://your-app.onrender.com
 
-# Logging
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
-
-# Flask app for webhook
-app = Flask(__name__)
-
-# Telegram Bot app
-bot = Bot(token=TOKEN)
-application = Application.builder().token(TOKEN).build()
+# Ініціалізація Telegram Application
+application = ApplicationBuilder().token(TOKEN).build()
 
 
-# Start command
+# Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("➕ Додати гаманець", callback_data="add_wallet")],
-        [InlineKeyboardButton("➖ Видалити гаманець", callback_data="remove_wallet")],
-        [InlineKeyboardButton("➕ Додати токен", callback_data="add_token")],
-        [InlineKeyboardButton("➖ Видалити токен", callback_data="remove_token")],
-        [InlineKeyboardButton("📋 Показати дані", callback_data="show_data")],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("👋 Привіт! Обери дію:", reply_markup=reply_markup)
+    await update.message.reply_text("Привіт! Надішли мені токен або адресу гаманця.")
 
 
-# Handle button presses
-async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data
+# Обробка повідомлень
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
 
-    # Роутинг по callback'ам
-    if data == "add_wallet":
-        await prompt_wallet_address(update, context)
-    elif data == "remove_wallet":
-        await prompt_wallet_removal(update, context)
-    elif data == "add_token":
-        await prompt_token_wallet_choice(update, context)
-    elif data == "remove_token":
-        await prompt_token_removal(update, context)
-    elif data == "show_data":
-        await show_user_data(update, context)
+    if text.startswith("0x") and len(text) == 42:
+        await handle_wallet_message(update, context)
+    elif text.startswith("0x") and len(text) == 66:
+        await handle_token_message(update, context)
     else:
-        # Якщо це не основне меню, передати в хендлери
-        await wallet_callback(update, context)
-        await token_callback(update, context)
+        await update.message.reply_text("Надішли правильну адресу гаманця або токена.")
 
 
-# Handle text messages (input values)
-async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await wallet_handle_text(update, context)
-    await token_handle_text(update, context)
+# Додавання хендлерів
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 
-# Webhook route
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    if request.method == "POST":
-        update = Update.de_json(request.get_json(force=True), bot)
-        application.update_queue.put_nowait(update)
-        return "ok", 200
+# Flask маршрут для webhook
+@flask_app.route("/", methods=["POST"])
+async def webhook():
+    data = request.get_json(force=True)
+    update = Update.de_json(data, application.bot)
+    await application.process_update(update)
+    return "ok"
 
 
-# Main entry
+async def main():
+    # Запуск шедулера
+    await start_scheduler(application.bot)
+
+    # Встановлення webhook
+    await application.bot.set_webhook(url=WEBHOOK_URL)
+
+    # Запуск Flask
+    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+
 if __name__ == "__main__":
-    # Telegram handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(callback_router))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_router))
-
-    # Запускаємо scheduler (перевірки)
-    start_scheduler(application.bot)
-
-    # Запускаємо webhook сервер Flask
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 8080)),
-        webhook_url=WEBHOOK_URL,
-    )
+    asyncio.run(main())
