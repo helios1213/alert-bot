@@ -1,6 +1,7 @@
 import logging
 import os
 
+from telegram import Update  # <-- Обовʼязковий імпорт!
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -17,6 +18,8 @@ load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
+print(f"TOKEN: {TOKEN!r}")  # Для дебагу, видали у продакшн
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
