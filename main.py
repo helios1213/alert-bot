@@ -1,10 +1,10 @@
 import os
-import asyncio
 import json
+import asyncio
 import nest_asyncio
-from dotenv import load_dotenv
 from flask import Flask, request
-from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from dotenv import load_dotenv
+from telegram import Update, Bot
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -13,16 +13,8 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-
-from wallet_handler import handle_text as wallet_text, prompt_wallet_address, prompt_wallet_removal
-from token_handler import (
-    handle_text as token_text,
-    handle_callback_query,
-    prompt_token_wallet_choice,
-    prompt_token_removal,
-    show_user_data
-)
-from scheduler import start_scheduler
+from handlers import wallet_handler, token_handler
+from utils.scheduler import start_scheduler
 
 # --- INIT ---
 load_dotenv()
@@ -37,9 +29,9 @@ def ensure_data_file():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w") as f:
             json.dump({}, f, indent=2)
-        print("📁 Файл data.json створено.")
+        print("📁 Створено data.json")
     else:
-        print("📁 Файл data.json існує.")
+        print("✅ data.json існує")
 
 ensure_data_file()
 
@@ -49,7 +41,8 @@ bot_app = ApplicationBuilder().token(TOKEN).build()
 
 # --- Telegram Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"✅ /start received from user_id={update.effective_user.id}")
+    print(f"✅ /start від {update.effective_user.id}")
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     keyboard = [
         [InlineKeyboardButton("➕ Додати гаманець", callback_data='add_wallet')],
@@ -58,37 +51,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🗑 Видалити токен", callback_data='remove_token')],
         [InlineKeyboardButton("📋 Список", callback_data='list')]
     ]
-    markup = InlineKeyboardMarkup(keyboard)
-
-    if update.message:
-        await update.message.reply_text("👋 Вітаю! Обери дію:", reply_markup=markup)
-    elif update.effective_chat:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="👋 Вітаю! Обери дію:", reply_markup=markup)
-    else:
-        print("⚠️ Немає доступного чату для відповіді.")
+    await update.message.reply_text("👋 Вітаю! Обери дію:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"🔘 Callback data: {update.callback_query.data}")
     query = update.callback_query
     await query.answer()
     data = query.data
+    print(f"🔘 Callback: {data}")
+
     if data == 'add_wallet':
-        await prompt_wallet_address(update, context)
+        await wallet_handler.prompt_wallet_address(update, context)
     elif data == 'add_token':
-        await prompt_token_wallet_choice(update, context)
+        await token_handler.prompt_token_wallet_choice(update, context)
     elif data == 'remove_wallet':
-        await prompt_wallet_removal(update, context)
+        await wallet_handler.prompt_wallet_removal(update, context)
     elif data == 'remove_token':
-        await prompt_token_removal(update, context)
+        await token_handler.prompt_token_removal(update, context)
     elif data == 'list':
-        await show_user_data(update, context)
-    else:
-        await handle_callback_query(update, context)
+        await token_handler.show_user_data(update, context)
+    elif data.startswith("remove_wallet_"):
+        await wallet_handler.handle_callback_query(update, context)
+    elif data.startswith("remove_token_") or data.startswith("token_wallet_"):
+        await token_handler.handle_callback_query(update, context)
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"✉️ Text from user {update.effective_user.id}: {update.message.text}")
-    await wallet_text(update, context)
-    await token_text(update, context)
+    await wallet_handler.handle_text(update, context)
+    await token_handler.handle_text(update, context)
 
 # --- Register Handlers ---
 bot_app.add_handler(CommandHandler("start", start))
@@ -100,24 +88,10 @@ bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)
 def webhook():
     try:
         update = Update.de_json(request.get_json(force=True), bot_app.bot)
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(bot_app.process_update(update))
-        print("📨 Webhook update processed.")
+        asyncio.get_event_loop().run_until_complete(bot_app.process_update(update))
+        print("📨 Webhook оброблено")
     except Exception as e:
-        print(f"❌ Error in webhook: {e}")
+        print(f"❌ Webhook error: {e}")
     return "ok", 200
 
-# --- Init Webhook + Scheduler ---
-async def setup_webhook_and_scheduler():
-    print(f"🌐 Установка вебхуку на {WEBHOOK_URL}")
-    bot = Bot(token=TOKEN)
-    await bot.set_webhook(url=WEBHOOK_URL)
-    asyncio.create_task(start_scheduler(bot_app))
-
-async def main():
-    await setup_webhook_and_scheduler()
-    print("🚀 Бот запущено. Очікування запитів...")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# --- Init Web
