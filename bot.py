@@ -130,7 +130,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action == "add_wallet":
         if step == "waiting_wallet_address":
-            # Простий базовий чек формату (можна розширити)
             if not text.startswith("0x") or len(text) != 42:
                 await update.message.reply_text("Invalid wallet address format. Try again:")
                 return
@@ -138,7 +137,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             state["step"] = "waiting_wallet_name"
             await update.message.reply_text("Send wallet name:")
         elif step == "waiting_wallet_name":
-            # Перевірка обмеження 5 гаманців
             c.execute("SELECT COUNT(*) FROM wallets WHERE chat_id=?", (chat_id,))
             if c.fetchone()[0] >= 5:
                 await update.message.reply_text("Max 5 wallets allowed.")
@@ -153,7 +151,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif action == "add_token":
         if step == "waiting_wallet_for_token":
-            # Перевіряємо чи цей гаманець є у користувача
             c.execute("SELECT wallet_address FROM wallets WHERE chat_id=? AND wallet_address=?", (chat_id, text))
             if not c.fetchone():
                 await update.message.reply_text("Wallet not found in your list. Send correct wallet address:")
@@ -172,7 +169,6 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             token_name = text
             wallet_address = state["wallet_address"]
             token_contract = state["token_contract"]
-            # Зберігаємо токен з дефолтним діапазоном
             c.execute(
                 "INSERT INTO tokens VALUES (?, ?, ?, ?, ?, ?)",
                 (chat_id, wallet_address, token_contract, token_name, 0.0, 999999999.0)
@@ -267,12 +263,10 @@ async def check_transfers(app):
                                     continue
                                 if tx_hash not in sent_notifications:
                                     sent_notifications[tx_hash] = {}
-                                # Лімітуємо сповіщення на 5 на токен+гаманець
                                 key = f"{chat_id}_{wallet}_{token_contract}"
                                 sent_count = sent_notifications[tx_hash].get(key, 0)
                                 if sent_count >= 5:
                                     continue
-                                # Відправляємо повідомлення, якщо tx стосується гаманця (to або from)
                                 if to_addr == wallet.lower() or from_addr == wallet.lower():
                                     direction = "IN" if to_addr == wallet.lower() else "OUT"
                                     msg = (
