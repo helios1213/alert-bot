@@ -26,6 +26,8 @@ bot_app = ApplicationBuilder().token(TOKEN).build()
 
 # --- Telegram Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"✅ /start received from user_id={update.effective_user.id}")
+
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     keyboard = [
         [InlineKeyboardButton("➕ Додати гаманець", callback_data='add_wallet')],
