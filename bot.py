@@ -63,7 +63,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_state[chat_id] = {"action": "add_wallet", "step": "waiting_wallet_address"}
         await query.message.reply_text("Send wallet address (BSC):")
     elif query.data == "add_token":
-        # Перевірка чи є гаманці
         c.execute("SELECT wallet_address FROM wallets WHERE chat_id=?", (chat_id,))
         wallets = c.fetchall()
         if not wallets:
@@ -104,9 +103,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         user_state[chat_id] = {"action": "del_token", "step": "waiting_wallet_for_token_del"}
         await query.message.reply_text("Send wallet address to delete token from:")
-
     elif query.data.startswith("deltok_"):
-        parts = query.data.split("_", 2)  # deltock_wallet_tokenContract
+        parts = query.data.split("_", 2)
         if len(parts) < 3:
             await query.message.reply_text("Invalid token delete command.")
             return
@@ -169,12 +167,13 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             token_name = text
             wallet_address = state["wallet_address"]
             token_contract = state["token_contract"]
+            # Додаємо з дефолтним діапазоном (0; дуже велике число)
             c.execute(
                 "INSERT INTO tokens VALUES (?, ?, ?, ?, ?, ?)",
                 (chat_id, wallet_address, token_contract, token_name, 0.0, 999999999.0)
             )
             conn.commit()
-            await update.message.reply_text("Token added ✅")
+            await update.message.reply_text("Token added ✅\nNow set the range with 'Set Range' menu.")
             user_state.pop(chat_id)
 
     elif action == "set_range":
@@ -259,23 +258,24 @@ async def check_transfers(app):
                                 to_addr = tx["to"].lower()
                                 from_addr = tx["from"].lower()
                                 amount = int(tx["value"]) / (10 ** int(tx["tokenDecimal"]))
+
                                 if not (min_amount <= amount <= max_amount):
                                     continue
-                                if tx_hash not in sent_notifications:
-                                    sent_notifications[tx_hash] = {}
-                                key = f"{chat_id}_{wallet}_{token_contract}"
-                                sent_count = sent_notifications[tx_hash].get(key, 0)
+
+                                unique_key = f"{tx_hash}_{chat_id}_{wallet}_{token_contract}"
+                                sent_count = sent_notifications.get(unique_key, 0)
                                 if sent_count >= 5:
                                     continue
+
                                 if to_addr == wallet.lower() or from_addr == wallet.lower():
                                     direction = "IN" if to_addr == wallet.lower() else "OUT"
                                     msg = (
                                         f"🔔 {direction} {amount} {token_name}\n"
-                                        f"Wallet: {wallet}\n"
+                                        f"Wallet:\n{wallet}\n"
                                         f"Tx: https://bscscan.com/tx/{tx_hash}"
                                     )
                                     await app.bot.send_message(chat_id, msg)
-                                    sent_notifications[tx_hash][key] = sent_count + 1
+                                    sent_notifications[unique_key] = sent_count + 1
                                     save_sent_notifications()
                     except Exception as e:
                         print(f"Error checking wallet {wallet}: {e}")
