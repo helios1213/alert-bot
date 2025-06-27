@@ -20,52 +20,59 @@ def save_data(data):
 
 
 async def prompt_token_wallet_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
     data = load_data()
-    wallets = data.get(str(user_id), {}).get("wallets", [])
+    wallets = data.get(user_id, {}).get("wallets", [])
 
     if not wallets:
         await update.callback_query.message.reply_text("ℹ️ Спочатку додай гаманець.")
         return
 
     token_states[user_id] = {"step": "select_wallet"}
-    buttons = [[InlineKeyboardButton(w["name"], callback_data=f"token_wallet_{w['name']}")] for w in wallets]
+    buttons = [
+        [InlineKeyboardButton(w["name"], callback_data=f"token_wallet_{w['name']}")] for w in wallets
+    ]
     markup = InlineKeyboardMarkup(buttons)
     await update.callback_query.message.reply_text("🔹 Вибери гаманець для токену:", reply_markup=markup)
 
 
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
     query = update.callback_query
+    user_id = str(update.effective_user.id)
     await query.answer()
-
     data = query.data
     state = token_states.get(user_id, {})
 
     if data.startswith("token_wallet_") and state.get("step") == "select_wallet":
         wallet_name = data.replace("token_wallet_", "")
-        state["wallet_name"] = wallet_name
-        state["step"] = "awaiting_contract"
+        token_states[user_id] = {
+            "wallet_name": wallet_name,
+            "step": "awaiting_contract"
+        }
         await query.message.reply_text("🔹 Введи контракт токену:")
 
     elif data.startswith("remove_token_"):
         token_name = data.replace("remove_token_", "")
         data_store = load_data()
-        tokens = data_store.get(str(user_id), {}).get("tokens", [])
-        data_store[str(user_id)]["tokens"] = [t for t in tokens if t["name"] != token_name]
+        user_data = data_store.get(user_id, {})
+        tokens = user_data.get("tokens", [])
+
+        updated_tokens = [t for t in tokens if t["name"] != token_name]
+        data_store[user_id]["tokens"] = updated_tokens
         save_data(data_store)
-        await query.message.reply_text(f"🗑 Токен {token_name} видалено.")
+
+        await query.message.reply_text(f"🗑 Токен `{token_name}` видалено.", parse_mode="Markdown")
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
+    text = update.message.text.strip()
     state = token_states.get(user_id)
     if not state:
         return
 
-    text = update.message.text.strip()
     data_store = load_data()
-    user_info = data_store.setdefault(str(user_id), {"wallets": [], "tokens": [], "seen": []})
+    user_info = data_store.setdefault(user_id, {"wallets": [], "tokens": [], "seen": []})
 
     if state["step"] == "awaiting_contract":
         state["contract"] = text
@@ -130,6 +137,6 @@ async def show_user_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg += f"🔹 {w['name']} — `{w['address']}`\n"
 
     for t in info.get("tokens", []):
-        msg += f"🪙 {t['name']} [{t['wallet_name']}]: {t['contract']} ({t['min']} - {t['max']})\n"
+        msg += f"🪙 {t['name']} [{t['wallet_name']}]: `{t['contract']}` ({t['min']} - {t['max']})\n"
 
     await update.callback_query.message.reply_text(msg, parse_mode="Markdown")
