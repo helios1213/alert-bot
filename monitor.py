@@ -23,4 +23,6 @@ async def main():
     await app.updater.idle()
 
 if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())
+
