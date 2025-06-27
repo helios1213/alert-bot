@@ -63,8 +63,10 @@ async def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    await start_scheduler(app)
+    # 🧠 Запускаємо scheduler у фоні
+    asyncio.create_task(start_scheduler(app))
 
+    # 🟢 Запускаємо polling
     await app.run_polling()
 
 if __name__ == '__main__':
