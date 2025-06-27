@@ -1,6 +1,5 @@
 import logging
 import os
-
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -19,7 +18,7 @@ load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-print(f"TOKEN: {TOKEN!r}")  # Для дебагу, видали у продакшн
+print(f"TOKEN: {TOKEN!r}")  # Для дебагу
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -35,9 +34,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await handle_token_message(update, context)
 
-async def after_startup(app_):
-    await app_.bot.set_webhook(WEBHOOK_URL)
-    app_.create_task(start_scheduler(app_.bot))
+async def after_startup(app):
+    await app.bot.set_webhook(WEBHOOK_URL)
+    app.create_task(start_scheduler(app.bot))
 
 def main():
     if not TOKEN or not WEBHOOK_URL:
@@ -45,10 +44,8 @@ def main():
         return
 
     application = ApplicationBuilder().token(TOKEN).build()
-
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
     application.post_init = after_startup
 
     application.run_webhook(
