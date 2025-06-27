@@ -29,27 +29,47 @@ async def check_wallets(app):
                     if token["wallet_name"] != wallet["name"]:
                         continue
 
-                    url = f"https://api.bscscan.com/api?module=account&action=tokentx&address={address}&contractaddress={token['contract']}&sort=desc&apikey={api_key}"
-                    async with session.get(url) as resp:
-                        res = await resp.json()
-                        if res["status"] != "1":
-                            continue
+                    url = (
+                        f"https://api.bscscan.com/api"
+                        f"?module=account"
+                        f"&action=tokentx"
+                        f"&address={address}"
+                        f"&contractaddress={token['contract']}"
+                        f"&sort=desc"
+                        f"&apikey={api_key}"
+                    )
 
-                        for tx in res["result"][:20]:
-                            quantity = int(tx["value"]) / (10 ** int(tx["tokenDecimal"]))
-                            if float(token["min"]) <= quantity <= float(token["max"]):
-                                tx_hash = tx["hash"]
-                                if tx_hash in user_info.get("seen", []):
-                                    continue
-                                await bot.send_message(
-                                    chat_id=user_id,
-                                    text=f"🔔 Транзакція токену {token['name']}:
-Hash: {tx_hash}
-Quantity: {quantity}"
-                                )
-                                user_info.setdefault("seen", []).append(tx_hash)
-                                if len(user_info["seen"]) > 100:
-                                    user_info["seen"] = user_info["seen"][-100:]
+                    try:
+                        async with session.get(url) as resp:
+                            res = await resp.json()
+                            if res.get("status") != "1":
+                                continue
+
+                            for tx in res["result"][:20]:
+                                quantity = int(tx["value"]) / (10 ** int(tx["tokenDecimal"]))
+                                if float(token["min"]) <= quantity <= float(token["max"]):
+                                    tx_hash = tx["hash"]
+
+                                    if tx_hash in user_info.get("seen", []):
+                                        continue
+
+                                    message = (
+                                        f"🔔 Транзакція токену {token['name']}:\n"
+                                        f"📥 Кількість: {quantity}\n"
+                                        f"🔗 Хеш: {tx_hash}"
+                                    )
+
+                                    await bot.send_message(chat_id=user_id, text=message)
+
+                                    # Зберігаємо хеш транзакції
+                                    user_info.setdefault("seen", []).append(tx_hash)
+
+                                    # Залишаємо лише останні 100
+                                    if len(user_info["seen"]) > 100:
+                                        user_info["seen"] = user_info["seen"][-100:]
+
+                    except Exception as e:
+                        print(f"⚠️ Помилка при запиті до API: {e}")
 
     save_data(data)
 
