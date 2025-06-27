@@ -21,6 +21,9 @@ load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
+# --- Додаємо debug print для перевірки токена ---
+print(f"TOKEN: {TOKEN!r}")  # Тут побачиш токен в логах!
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
@@ -28,10 +31,8 @@ logging.basicConfig(
 app = Flask(__name__)
 application = None
 
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привіт! Надішли мені адресу гаманця або токен.")
-
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -39,7 +40,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_wallet_message(update, context)
     else:
         await handle_token_message(update, context)
-
 
 @app.route("/", methods=["GET", "POST"])
 async def webhook():
@@ -49,7 +49,6 @@ async def webhook():
         await application.update_queue.put(update)
         return "OK"
     return "Bot is running!"
-
 
 async def run_bot():
     global application
@@ -68,7 +67,6 @@ async def run_bot():
         port=int(os.environ.get("PORT", 5000)),
         webhook_url=WEBHOOK_URL,
     )
-
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
