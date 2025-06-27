@@ -2,4 +2,4 @@ python-telegram-bot==20.7
 aiohttp
 python-dotenv
 nest_asyncio
-flask
+flask==3.1.1
