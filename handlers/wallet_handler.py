@@ -90,3 +90,10 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
         await query.message.reply_text(f"🗑 Гаманець {wallet_name} видалено.")
         print(f"[wallet] user={user_id} — wallet '{wallet_name}' removed")
+
+# --- Обгортка для обробки гаманця ---
+async def handle_wallet_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.callback_query:
+        await prompt_wallet_address(update, context)
+    elif update.message:
+        await handle_text(update, context)
