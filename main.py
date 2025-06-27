@@ -1,7 +1,6 @@
 import logging
 import os
 
-from flask import Flask
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -19,24 +18,14 @@ load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-print(f"TOKEN: {TOKEN!r}")
-
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 
-# Flask healthcheck (НЕ для webhook, тільки для Render)
-app = Flask(__name__)
-
-@app.route("/", methods=["GET"])
-def healthcheck():
-    return "Bot is running!"
-
-# --- Telegram bot async logic ---
-async def start(update, context):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привіт! Надішли мені адресу гаманця або токен.")
 
-async def handle_message(update, context):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text.startswith("0x") and len(text) == 42:
         await handle_wallet_message(update, context)
@@ -59,7 +48,6 @@ def main():
 
     application.post_init = after_startup
 
-    # Головний спосіб запуску для Render/Heroku/Webhook!
     application.run_webhook(
         listen="0.0.0.0",
         port=int(os.environ.get("PORT", 5000)),
