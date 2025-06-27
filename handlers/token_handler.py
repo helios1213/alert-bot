@@ -114,16 +114,12 @@ async def show_user_data(update: Update, context: CallbackContext):
     user_id = str(update.effective_user.id)
     data = load_data()
     info = data.get(user_id, {})
-    msg = "📋 Список:
+    msg = "📋 Список:\\n\\n"
 
-"
+for w in info.get("wallets", []):
+    msg += f"🔹 {w['name']} — `{w['address']}`\\n"
 
-    for w in info.get("wallets", []):
-        msg += f"🔹 {w['name']} — `{w['address']}`
-"
+for t in info.get("tokens", []):
+    msg += f"🪙 {t['name']} [{t['wallet_name']}]: {t['contract']} ({t['min']} - {t['max']})\\n"
 
-    for t in info.get("tokens", []):
-        msg += f"🪙 {t['name']} [{t['wallet_name']}]: {t['contract']} ({t['min']} - {t['max']})
-"
-
-    await update.callback_query.message.reply_text(msg, parse_mode="Markdown")
+await update.callback_query.message.reply_text(msg, parse_mode="Markdown")
