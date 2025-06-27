@@ -6,19 +6,24 @@ from telegram.ext import ContextTypes
 DATA_FILE = "data.json"
 token_states = {}
 
-
 def load_data():
     if not os.path.exists(DATA_FILE):
         return {}
     with open(DATA_FILE, "r") as f:
         return json.load(f)
 
-
 def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
+# Головна функція для реєстрації текстових повідомлень
+async def handle_token_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message:
+        await handle_text(update, context)
+    elif update.callback_query:
+        await handle_callback_query(update, context)
 
+# --- Додавання токена ---
 async def prompt_token_wallet_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = load_data()
@@ -34,7 +39,6 @@ async def prompt_token_wallet_choice(update: Update, context: ContextTypes.DEFAU
     ]
     markup = InlineKeyboardMarkup(buttons)
     await update.callback_query.message.reply_text("🔹 Вибери гаманець для токену:", reply_markup=markup)
-
 
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -62,7 +66,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         save_data(data_store)
 
         await query.message.reply_text(f"🗑 Токен `{token_name}` видалено.", parse_mode="Markdown")
-
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -109,7 +112,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("❌ Введи число.")
 
-
+# --- Видалення токена ---
 async def prompt_token_removal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = load_data()
@@ -126,7 +129,7 @@ async def prompt_token_removal(update: Update, context: ContextTypes.DEFAULT_TYP
     markup = InlineKeyboardMarkup(buttons)
     await update.callback_query.message.reply_text("🔻 Вибери токен для видалення:", reply_markup=markup)
 
-
+# --- Вивід даних ---
 async def show_user_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = load_data()
