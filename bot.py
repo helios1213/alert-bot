@@ -1,4 +1,4 @@
-# bot.py — Реальний Telegram-бот з моніторингом BscScan API
+# bot.py — Telegram-бот для моніторингу вихідних транзакцій з гаманців (BSC)
 import asyncio
 import sqlite3
 import aiohttp
@@ -30,6 +30,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Add Wallet", callback_data="add_wallet")],
         [InlineKeyboardButton("Add Token", callback_data="add_token")],
         [InlineKeyboardButton("Set Range", callback_data="set_range")],
+        [InlineKeyboardButton("Delete Token", callback_data="delete_token")],
         [InlineKeyboardButton("Show Wallets", callback_data="show_wallets")]
     ]
     await update.message.reply_text("Welcome! Choose:", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -49,6 +50,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "set_range":
         user_state[chat_id] = {"action": "set_range"}
         await query.message.reply_text("Format: Wallet;Symbol;Min;Max")
+    elif query.data == "delete_token":
+        user_state[chat_id] = {"action": "delete_token"}
+        await query.message.reply_text("Format: Wallet;Symbol")
     elif query.data == "show_wallets":
         c.execute("SELECT DISTINCT address FROM wallets WHERE chat_id=?", (chat_id,))
         wallets = [row[0] for row in c.fetchall()]
@@ -89,9 +93,19 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             await update.message.reply_text("Wrong format")
 
+    elif action == "delete_token":
+        try:
+            wallet, symbol = [x.strip() for x in text.split(";")]
+            c.execute("DELETE FROM tokens WHERE chat_id=? AND wallet=? AND symbol=?",
+                      (chat_id, wallet, symbol))
+            conn.commit()
+            await update.message.reply_text("Token deleted ✅")
+        except:
+            await update.message.reply_text("Wrong format")
+
     user_state[chat_id] = {}
 
-# Перевірка транзакцій через BscScan
+# Перевірка транзакцій через BscScan (вихідні)
 async def check_transfers(app):
     c.execute("SELECT DISTINCT chat_id FROM wallets")
     users = [row[0] for row in c.fetchall()]
@@ -108,10 +122,10 @@ async def check_transfers(app):
                         async with session.get(url) as resp:
                             data = await resp.json()
                             for tx in data.get("result", []):
-                                if tx["to"].lower() == wallet.lower():
+                                if tx["from"].lower() == wallet.lower():
                                     amount = int(tx["value"]) / (10 ** int(tx["tokenDecimal"]))
                                     if min_val <= amount <= max_val:
-                                        msg = f"✅ {amount} {symbol} to {wallet}\nhttps://bscscan.com/tx/{tx['hash']}"
+                                        msg = f"📤 {amount} {symbol} from {wallet}\nhttps://bscscan.com/tx/{tx['hash']}"
                                         await app.bot.send_message(chat_id, msg)
                     except Exception as e:
                         print(f"Error for {wallet}: {e}")
@@ -141,3 +155,4 @@ if __name__ == "__main__":
             loop.run_until_complete(run())
     except RuntimeError:
         asyncio.run(run())
+
