@@ -1,6 +1,6 @@
 import json
 import os
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext
 
 DATA_FILE = "data.json"
@@ -8,11 +8,11 @@ DATA_FILE = "data.json"
 def load_data():
     if not os.path.exists(DATA_FILE):
         return {}
-    with open(DATA, "r") as f:
+    with open(DATA_FILE, "r") as f:
         return json.load(f)
 
 def save_data(data):
-    with open(DATA, "w") as f:
+    with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
 user_states = {}
@@ -39,6 +39,7 @@ async def handle_text(update: Update, context: CallbackContext):
         state["address"] = text
         state["step"] = "awaiting_wallet_name"
         await update.message.reply_text("🔹 Введи назву для цього гаманця:")
+
     elif state["step"] == "awaiting_wallet_name":
         user_info["wallets"].append({
             "name": text,
@@ -57,11 +58,9 @@ async def prompt_wallet_removal(update: Update, context: CallbackContext):
         await update.callback_query.message.reply_text("ℹ️ Немає доданих гаманців.")
         return
 
-    buttons = []
-    for w in user_info["wallets"]:
-        buttons.append([{"text": w["name"], "callback_data": f"remove_wallet_{w['name']}"}])
-
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    keyboard = [[InlineKeyboardButton(b["text"], callback_data=b["callback_data"])] for b in sum(buttons, [])]
-    markup = InlineKeyboardMarkup(keyboard)
+    buttons = [
+        [InlineKeyboardButton(w["name"], callback_data=f"remove_wallet_{w['name']}")]
+        for w in user_info["wallets"]
+    ]
+    markup = InlineKeyboardMarkup(buttons)
     await update.callback_query.message.reply_text("🔻 Вибери гаманець для видалення:", reply_markup=markup)
