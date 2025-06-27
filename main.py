@@ -2,7 +2,7 @@ import logging
 import os
 import asyncio
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -54,29 +54,35 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await token_handler.prompt_token_removal(update, context)
     if data == "list":
         return await token_handler.show_user_data(update, context)
-    # а решту делегуємо у власні callback-и
     if data.startswith("token_wallet_") or data.startswith("remove_token_"):
         return await token_handler.handle_callback_query(update, context)
     if data.startswith("remove_wallet_"):
         return await wallet_handler.handle_callback_query(update, context)
 
 async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # будь-який вхідний текст — спочатку гаманці…
     await wallet_handler.handle_text(update, context)
-    # …після цього токени
     await token_handler.handle_text(update, context)
 
 async def on_startup(app):
-    # один раз ставимо вебхук
     await app.bot.set_webhook(WEBHOOK_URL)
+    # set bot commands for /start and /menu
+    await app.bot.set_my_commands([
+        BotCommand("start", "Відкрити меню"),
+        BotCommand("menu",  "Відкрити меню"),
+    ])
     logging.info("🔔 Вебхук встановлено, запускаємо scheduler…")
-    # ПРАВИЛЬНО: передаємо саме Application
     asyncio.create_task(start_scheduler(app))
+
+async def on_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # simply call start to show the same menu
+    await start(update, context)
+
 
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("menu",  on_menu))
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 
