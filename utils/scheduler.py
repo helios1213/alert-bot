@@ -46,6 +46,11 @@ async def check_wallets(app):
                                 continue
 
                             for tx in res["result"][:20]:
+                                # ---- Додаємо фільтр тільки на вихідні транзакції ----
+                                if tx["from"].lower() != address.lower():
+                                    continue
+                                # -------------------------------------------------------
+
                                 quantity = int(tx["value"]) / (10 ** int(tx["tokenDecimal"]))
                                 if float(token["min"]) <= quantity <= float(token["max"]):
                                     tx_hash = tx["hash"]
@@ -55,7 +60,7 @@ async def check_wallets(app):
 
                                     message = (
                                         f"🔔 Транзакція токену {token['name']}:\n"
-                                        f"📥 Кількість: {quantity}\n"
+                                        f"📤 Кількість: {quantity}\n"  # змінили іконку на вихід
                                         f"🔗 Хеш: {tx_hash}"
                                     )
 
