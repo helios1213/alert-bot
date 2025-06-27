@@ -53,10 +53,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Вітаю! Обери дію:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"🔘 Callback data: {update.callback_query.data}")
     query = update.callback_query
     await query.answer()
     data = query.data
+    print(f"🔘 Callback data: {data}")
+
     if data == 'add_wallet':
         await wallet_handler.prompt_wallet_address(update, context)
     elif data == 'add_token':
@@ -68,6 +69,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'list':
         await token_handler.show_user_data(update, context)
     else:
+        # Обробка custom callback'ів: remove_wallet_*, token_wallet_*, remove_token_*
+        await wallet_handler.handle_callback_query(update, context)
         await token_handler.handle_callback_query(update, context)
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -75,7 +78,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await wallet_handler.handle_text(update, context)
     await token_handler.handle_text(update, context)
 
-# --- Handlers реєстрація ---
+# --- Register handlers ---
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(CallbackQueryHandler(handle_callback))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
