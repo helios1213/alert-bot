@@ -1,4 +1,5 @@
 import os
+import sys
 import asyncio
 import json
 import sqlite3
@@ -12,7 +13,22 @@ import aiohttp
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 BSCSCAN_API_KEY = os.getenv("BSCSCAN_API_KEY")
 SENT_NOTIF_FILE = "sent_notifications.json"
+LOCKFILE = "bot.lock"
 
+# --- Функції блокування ---
+def create_lock():
+    if os.path.exists(LOCKFILE):
+        print("Bot already running (lockfile exists). Exiting.")
+        sys.exit(1)
+    else:
+        with open(LOCKFILE, "w") as f:
+            f.write(str(os.getpid()))
+
+def remove_lock():
+    if os.path.exists(LOCKFILE):
+        os.remove(LOCKFILE)
+
+# --- Ініціалізація бази ---
 conn = sqlite3.connect("data.db", check_same_thread=False)
 c = conn.cursor()
 c.execute("CREATE TABLE IF NOT EXISTS wallets (chat_id INTEGER, wallet_address TEXT, wallet_name TEXT)")
@@ -30,7 +46,6 @@ conn.commit()
 
 user_state = {}
 
-# Завантажуємо sent_notifications з файлу
 try:
     with open(SENT_NOTIF_FILE, "r") as f:
         sent_notifications = json.load(f)
@@ -41,7 +56,7 @@ def save_sent_notifications():
     with open(SENT_NOTIF_FILE, "w") as f:
         json.dump(sent_notifications, f)
 
-# Меню
+# --- Меню ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("Add Wallet", callback_data="add_wallet")],
@@ -53,7 +68,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("Welcome! Choose an option:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-# Обробка меню
+# --- Обробка меню ---
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     chat_id = query.message.chat.id
@@ -113,7 +128,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         await query.message.reply_text(f"Deleted token {token_contract} from wallet {wallet}.")
 
-# Обробка повідомлень користувача для різних кроків
+# --- Обробка повідомлень ---
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     text = update.message.text.strip()
@@ -167,13 +182,12 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             token_name = text
             wallet_address = state["wallet_address"]
             token_contract = state["token_contract"]
-            # Додаємо з дефолтним діапазоном (0; дуже велике число)
             c.execute(
                 "INSERT INTO tokens VALUES (?, ?, ?, ?, ?, ?)",
                 (chat_id, wallet_address, token_contract, token_name, 0.0, 999999999.0)
             )
             conn.commit()
-            await update.message.reply_text("Token added ✅\nNow set the range with 'Set Range' menu.")
+            await update.message.reply_text("Token added ✅")
             user_state.pop(chat_id)
 
     elif action == "set_range":
@@ -231,7 +245,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Use /start to see menu.")
 
-# Функція перевірки транзакцій і відправлення повідомлень
+# --- Перевірка транзакцій ---
 async def check_transfers(app):
     c.execute("SELECT DISTINCT chat_id FROM wallets")
     users = [row[0] for row in c.fetchall()]
@@ -258,24 +272,23 @@ async def check_transfers(app):
                                 to_addr = tx["to"].lower()
                                 from_addr = tx["from"].lower()
                                 amount = int(tx["value"]) / (10 ** int(tx["tokenDecimal"]))
-
                                 if not (min_amount <= amount <= max_amount):
                                     continue
-
-                                unique_key = f"{tx_hash}_{chat_id}_{wallet}_{token_contract}"
-                                sent_count = sent_notifications.get(unique_key, 0)
+                                if tx_hash not in sent_notifications:
+                                    sent_notifications[tx_hash] = {}
+                                key = f"{chat_id}_{wallet}_{token_contract}"
+                                sent_count = sent_notifications[tx_hash].get(key, 0)
                                 if sent_count >= 5:
                                     continue
-
                                 if to_addr == wallet.lower() or from_addr == wallet.lower():
                                     direction = "IN" if to_addr == wallet.lower() else "OUT"
                                     msg = (
                                         f"🔔 {direction} {amount} {token_name}\n"
-                                        f"Wallet:\n{wallet}\n"
+                                        f"Wallet: {wallet}\n"
                                         f"Tx: https://bscscan.com/tx/{tx_hash}"
                                     )
                                     await app.bot.send_message(chat_id, msg)
-                                    sent_notifications[unique_key] = sent_count + 1
+                                    sent_notifications[tx_hash][key] = sent_count + 1
                                     save_sent_notifications()
                     except Exception as e:
                         print(f"Error checking wallet {wallet}: {e}")
@@ -286,6 +299,10 @@ async def periodic_check(app):
         await asyncio.sleep(15)
 
 async def main():
+    create_lock()  # Створюємо lock файл
+    import nest_asyncio
+    nest_asyncio.apply()
+
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -293,9 +310,10 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 
     asyncio.create_task(periodic_check(app))
-    await app.run_polling()
+    try:
+        await app.run_polling()
+    finally:
+        remove_lock()  # При завершенні видаляємо lock файл
 
 if __name__ == "__main__":
-    import nest_asyncio
-    nest_asyncio.apply()
     asyncio.run(main())
