@@ -1,7 +1,7 @@
 import logging
 import os
 import asyncio
-from flask import Flask, request
+
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -18,18 +18,15 @@ from utils.scheduler import start_scheduler
 from dotenv import load_dotenv
 load_dotenv()
 
+# !! ВАЖЛИВО: Перевіряй, щоб TELEGRAM_TOKEN і WEBHOOK_URL були в .env !!
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# --- Додаємо debug print для перевірки токена ---
-print(f"TOKEN: {TOKEN!r}")  # Тут побачиш токен в логах!
+print(f"TOKEN: {TOKEN!r}")  # Для дебага — видалити у проді
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
-
-app = Flask(__name__)
-application = None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Привіт! Надішли мені адресу гаманця або токен.")
@@ -41,27 +38,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await handle_token_message(update, context)
 
-@app.route("/", methods=["GET", "POST"])
-async def webhook():
-    if request.method == "POST":
-        data = request.get_json(force=True)
-        update = Update.de_json(data, application.bot)
-        await application.update_queue.put(update)
-        return "OK"
-    return "Bot is running!"
-
 async def run_bot():
-    global application
+    if not TOKEN or not WEBHOOK_URL:
+        print("❌ Не знайдено TELEGRAM_TOKEN або WEBHOOK_URL!")
+        return
+
     application = ApplicationBuilder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # Ставимо webhook
     await application.bot.set_webhook(WEBHOOK_URL)
 
-    # Запуск планувальника
+    # Запуск планувальника (асинхронно)
     asyncio.create_task(start_scheduler(application.bot))
 
+    # Запуск самого Telegram Webhook server-а
     await application.run_webhook(
         listen="0.0.0.0",
         port=int(os.environ.get("PORT", 5000)),
