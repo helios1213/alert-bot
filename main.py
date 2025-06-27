@@ -1,5 +1,6 @@
 import os
 import asyncio
+import json
 import nest_asyncio
 from dotenv import load_dotenv
 from flask import Flask, request
@@ -15,19 +16,32 @@ from telegram.ext import (
 from handlers import wallet_handler, token_handler
 from utils.scheduler import start_scheduler
 
+# --- INIT ---
 load_dotenv()
 nest_asyncio.apply()
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+DATA_FILE = "data.json"
 
+# --- Ensure data.json exists ---
+def ensure_data_file():
+    if not os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "w") as f:
+            json.dump({}, f, indent=2)
+        print("📁 Файл data.json створено.")
+    else:
+        print("📁 Файл data.json існує.")
+
+ensure_data_file()
+
+# --- Flask ---
 app = Flask(__name__)
 bot_app = ApplicationBuilder().token(TOKEN).build()
 
 # --- Telegram Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"✅ /start received from user_id={update.effective_user.id}")
-
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     keyboard = [
         [InlineKeyboardButton("➕ Додати гаманець", callback_data='add_wallet')],
@@ -39,6 +53,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Вітаю! Обери дію:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"🔘 Callback data: {update.callback_query.data}")
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -56,6 +71,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await token_handler.handle_callback_query(update, context)
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"✉️ Text from user {update.effective_user.id}: {update.message.text}")
     await wallet_handler.handle_text(update, context)
     await token_handler.handle_text(update, context)
 
@@ -71,18 +87,21 @@ def webhook():
         update = Update.de_json(request.get_json(force=True), bot_app.bot)
         loop = asyncio.get_event_loop()
         loop.run_until_complete(bot_app.process_update(update))
+        print("📨 Webhook update processed.")
     except Exception as e:
         print(f"❌ Error in webhook: {e}")
     return "ok", 200
 
 # --- Init Webhook + Scheduler ---
 async def setup_webhook_and_scheduler():
+    print(f"🌐 Установка вебхуку на {WEBHOOK_URL}")
     bot = Bot(token=TOKEN)
     await bot.set_webhook(url=WEBHOOK_URL)
     asyncio.create_task(start_scheduler(bot_app))
 
 async def main():
     await setup_webhook_and_scheduler()
+    print("🚀 Бот запущено. Очікування запитів...")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 if __name__ == "__main__":
