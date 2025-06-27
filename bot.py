@@ -8,7 +8,7 @@ from telegram.ext import (
     CallbackQueryHandler, MessageHandler, filters
 )
 
-# Витягуємо змінні середовища
+# Змінні середовища
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 BSCSCAN_API_KEY = os.getenv("BSCSCAN_API_KEY")
 
@@ -29,7 +29,7 @@ conn.commit()
 
 user_state = {}
 
-# /start
+# Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("Add Wallet", callback_data="add_wallet")],
@@ -60,7 +60,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = "\n".join(wallets) if wallets else "No wallets"
         await query.message.reply_text(msg)
 
-# Ввід вручну
+# Обробка введених повідомлень
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     text = update.message.text
@@ -96,7 +96,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_state[chat_id] = {}
 
-# Перевірка вхід/вихід транзакцій
+# Перевірка транзакцій
 async def check_transfers(app):
     c.execute("SELECT DISTINCT chat_id FROM wallets")
     users = [row[0] for row in c.fetchall()]
@@ -122,17 +122,16 @@ async def check_transfers(app):
                                 amount = int(tx["value"]) / (10 ** int(tx["tokenDecimal"]))
                                 if min_val <= amount <= max_val:
                                     direction = "IN" if to_address == wallet.lower() else "OUT"
-                                    if direction == "OUT" or direction == "IN":
-                                        msg = (
-                                            f"🔁 {direction} {amount} {symbol} "
-                                            f"{'to' if direction == 'IN' else 'from'} {wallet}\n"
-                                            f"https://bscscan.com/tx/{tx['hash']}"
-                                        )
-                                        await app.bot.send_message(chat_id, msg)
+                                    msg = (
+                                        f"🔁 {direction} {amount} {symbol} "
+                                        f"{'to' if direction == 'IN' else 'from'} {wallet}\n"
+                                        f"https://bscscan.com/tx/{tx['hash']}"
+                                    )
+                                    await app.bot.send_message(chat_id, msg)
                     except Exception as e:
                         print(f"Error for {wallet}: {e}")
 
-# Основна логіка
+# Основна функція
 async def main():
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -148,5 +147,6 @@ async def main():
     asyncio.create_task(periodic())
     await app.run_polling()
 
-# Для Render
-asyncio.get_event_loop().create_task(main())
+# Запуск
+if __name__ == "__main__":
+    asyncio.run(main())
