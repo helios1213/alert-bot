@@ -1,6 +1,6 @@
 import os
-import json
 import asyncio
+import nest_asyncio
 from dotenv import load_dotenv
 from flask import Flask, request
 from telegram import Update, Bot
@@ -16,6 +16,7 @@ from handlers import wallet_handler, token_handler
 from utils.scheduler import start_scheduler
 
 load_dotenv()
+nest_asyncio.apply()
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
@@ -56,6 +57,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await wallet_handler.handle_text(update, context)
     await token_handler.handle_text(update, context)
 
+# --- Handlers реєстрація ---
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(CallbackQueryHandler(handle_callback))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
@@ -65,7 +67,8 @@ bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)
 def webhook():
     try:
         update = Update.de_json(request.get_json(force=True), bot_app.bot)
-        asyncio.run(bot_app.process_update(update))
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(bot_app.process_update(update))
     except Exception as e:
         print(f"❌ Error in webhook: {e}")
     return "ok", 200
@@ -74,7 +77,7 @@ def webhook():
 async def setup_webhook_and_scheduler():
     bot = Bot(token=TOKEN)
     await bot.set_webhook(url=WEBHOOK_URL)
-    asyncio.create_task(start_scheduler(bot_app))  # Запускаємо фоновий планувальник
+    asyncio.create_task(start_scheduler(bot_app))
 
 async def main():
     await setup_webhook_and_scheduler()
