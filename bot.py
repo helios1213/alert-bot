@@ -1,137 +1,172 @@
 import os
 import asyncio
-import sqlite3
 import aiohttp
+import json
+from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
-    ApplicationBuilder, ContextTypes, CommandHandler,
-    CallbackQueryHandler, MessageHandler, filters
+    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
+    ContextTypes, filters
 )
 
-# Змінні середовища
+load_dotenv()
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 BSCSCAN_API_KEY = os.getenv("BSCSCAN_API_KEY")
 
-# База даних SQLite
-conn = sqlite3.connect("data.db", check_same_thread=False)
-c = conn.cursor()
-c.execute("CREATE TABLE IF NOT EXISTS wallets (chat_id INTEGER, address TEXT)")
-c.execute("""
-CREATE TABLE IF NOT EXISTS tokens (
-    chat_id INTEGER,
-    wallet TEXT,
-    token_address TEXT,
-    symbol TEXT,
-    min REAL,
-    max REAL
-)""")
-conn.commit()
+# Пам'ять в JSON-файлі
+DATA_FILE = "data.json"
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w") as f:
+        json.dump({}, f)
+
+def load_data():
+    with open(DATA_FILE) as f:
+        return json.load(f)
+
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
 user_state = {}
 
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("Add Wallet", callback_data="add_wallet")],
-        [InlineKeyboardButton("Add Token", callback_data="add_token")],
-        [InlineKeyboardButton("Set Range", callback_data="set_range")],
-        [InlineKeyboardButton("Show Wallets", callback_data="show_wallets")]
+        [InlineKeyboardButton("➕ Add Wallet", callback_data="add_wallet")],
+        [InlineKeyboardButton("📄 Show Wallets", callback_data="show_wallets")],
+        [InlineKeyboardButton("❌ Delete Wallet", callback_data="delete_wallet")],
+        [InlineKeyboardButton("❌ Delete Token", callback_data="delete_token")]
     ]
-    await update.message.reply_text("Welcome! Choose:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await update.message.reply_text("👋 Welcome! Choose an option:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # Обробка кнопок
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    chat_id = str(query.message.chat.id)
     await query.answer()
-    chat_id = query.message.chat.id
 
     if query.data == "add_wallet":
-        user_state[chat_id] = {"action": "add_wallet"}
-        await query.message.reply_text("Send wallet address:")
-    elif query.data == "add_token":
-        user_state[chat_id] = {"action": "add_token"}
-        await query.message.reply_text("Format: Wallet;TokenAddress;Symbol")
-    elif query.data == "set_range":
-        user_state[chat_id] = {"action": "set_range"}
-        await query.message.reply_text("Format: Wallet;Symbol;Min;Max")
+        user_state[chat_id] = {"step": "awaiting_wallet"}
+        await query.message.reply_text("🪪 Send BSC wallet address:")
     elif query.data == "show_wallets":
-        c.execute("SELECT DISTINCT address FROM wallets WHERE chat_id=?", (chat_id,))
-        wallets = [row[0] for row in c.fetchall()]
-        msg = "\n".join(wallets) if wallets else "No wallets"
-        await query.message.reply_text(msg)
+        data = load_data().get(chat_id, {})
+        msg = ""
+        for name, val in data.get("wallets", {}).items():
+            msg += f"{name}: {val['address']}\n"
+            for t in val.get("tokens", {}).values():
+                msg += f"    🔹 {t['symbol']} ({t['address']}) [{t['min']} - {t['max']}]\n"
+        await query.message.reply_text(msg or "❌ No wallets found")
+    elif query.data == "delete_wallet":
+        user_state[chat_id] = {"step": "delete_wallet"}
+        await query.message.reply_text("✏️ Send wallet name to delete:")
+    elif query.data == "delete_token":
+        user_state[chat_id] = {"step": "delete_token"}
+        await query.message.reply_text("✏️ Format: WalletName;TokenSymbol")
 
-# Обробка введених повідомлень
+# Ввід вручну
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    text = update.message.text
-    action = user_state.get(chat_id, {}).get("action")
+    chat_id = str(update.message.chat_id)
+    text = update.message.text.strip()
+    state = user_state.get(chat_id, {})
 
-    if action == "add_wallet":
-        c.execute("SELECT COUNT(*) FROM wallets WHERE chat_id=?", (chat_id,))
-        if c.fetchone()[0] >= 5:
-            await update.message.reply_text("Max 5 wallets")
-            return
-        c.execute("INSERT INTO wallets VALUES (?, ?)", (chat_id, text.strip()))
-        conn.commit()
-        await update.message.reply_text("Wallet added ✅")
+    data = load_data()
+    user_data = data.setdefault(chat_id, {"wallets": {}})
 
-    elif action == "add_token":
+    if state.get("step") == "awaiting_wallet":
+        user_state[chat_id] = {"step": "awaiting_wallet_name", "wallet": text}
+        await update.message.reply_text("📝 Send a name for this wallet:")
+    elif state.get("step") == "awaiting_wallet_name":
+        wallet = state["wallet"]
+        name = text
+        user_data["wallets"][name] = {"address": wallet, "tokens": {}}
+        save_data(data)
+        user_state[chat_id] = {"step": "awaiting_token"}
+        await update.message.reply_text("✅ Wallet added.\nNow send BEP-20 token address:")
+    elif state.get("step") == "awaiting_token":
+        user_state[chat_id]["token"] = text
+        user_state[chat_id]["step"] = "awaiting_token_name"
+        await update.message.reply_text("📝 Send token name (symbol):")
+    elif state.get("step") == "awaiting_token_name":
+        user_state[chat_id]["symbol"] = text
+        user_state[chat_id]["step"] = "awaiting_range"
+        await update.message.reply_text("🔢 Send range: min;max (e.g. 0.1;100)")
+    elif state.get("step") == "awaiting_range":
         try:
-            wallet, contract, symbol = [x.strip() for x in text.split(";")]
-            c.execute("INSERT INTO tokens VALUES (?, ?, ?, ?, ?, ?)", (chat_id, wallet, contract, symbol, 0, 999999))
-            conn.commit()
-            await update.message.reply_text("Token added ✅")
+            min_val, max_val = map(float, text.split(";"))
+            for w_name, w in user_data["wallets"].items():
+                if "tokens" not in w:
+                    w["tokens"] = {}
+            token_data = {
+                "address": user_state[chat_id]["token"],
+                "symbol": user_state[chat_id]["symbol"],
+                "min": min_val,
+                "max": max_val,
+                "sent": 0
+            }
+            # Save to the last added wallet
+            last_wallet = list(user_data["wallets"].keys())[-1]
+            user_data["wallets"][last_wallet]["tokens"][token_data["symbol"]] = token_data
+            save_data(data)
+            user_state[chat_id] = {}
+            await update.message.reply_text("✅ Token added!")
         except:
-            await update.message.reply_text("Wrong format")
-
-    elif action == "set_range":
+            await update.message.reply_text("❌ Wrong format. Use: min;max")
+    elif state.get("step") == "delete_wallet":
+        if text in user_data["wallets"]:
+            del user_data["wallets"][text]
+            save_data(data)
+            await update.message.reply_text("✅ Wallet deleted")
+        else:
+            await update.message.reply_text("❌ Wallet not found")
+    elif state.get("step") == "delete_token":
         try:
-            wallet, symbol, min_val, max_val = text.split(";")
-            c.execute("UPDATE tokens SET min=?, max=? WHERE chat_id=? AND wallet=? AND symbol=?",
-                      (float(min_val), float(max_val), chat_id, wallet.strip(), symbol.strip()))
-            conn.commit()
-            await update.message.reply_text("Range set ✅")
+            wallet_name, symbol = text.split(";")
+            if symbol in user_data["wallets"].get(wallet_name, {}).get("tokens", {}):
+                del user_data["wallets"][wallet_name]["tokens"][symbol]
+                save_data(data)
+                await update.message.reply_text("✅ Token deleted")
+            else:
+                await update.message.reply_text("❌ Not found")
         except:
-            await update.message.reply_text("Wrong format")
-
-    user_state[chat_id] = {}
+            await update.message.reply_text("❌ Wrong format")
 
 # Перевірка транзакцій
-async def check_transfers(app):
-    c.execute("SELECT DISTINCT chat_id FROM wallets")
-    users = [row[0] for row in c.fetchall()]
-    async with aiohttp.ClientSession() as session:
-        for chat_id in users:
-            c.execute("SELECT address FROM wallets WHERE chat_id=?", (chat_id,))
-            wallets = [row[0] for row in c.fetchall()]
-            for wallet in wallets:
-                c.execute("SELECT * FROM tokens WHERE chat_id=? AND wallet=?", (chat_id, wallet))
-                tokens = c.fetchall()
-                for _, _, _, token_addr, symbol, min_val, max_val in tokens:
-                    url = (
-                        f"https://api.bscscan.com/api?module=account&action=tokentx"
-                        f"&address={wallet}&contractaddress={token_addr}&page=1&offset=5&sort=desc"
-                        f"&apikey={BSCSCAN_API_KEY}"
-                    )
-                    try:
-                        async with session.get(url) as resp:
-                            data = await resp.json()
-                            for tx in data.get("result", []):
-                                to_address = tx["to"].lower()
-                                from_address = tx["from"].lower()
-                                amount = int(tx["value"]) / (10 ** int(tx["tokenDecimal"]))
-                                if min_val <= amount <= max_val:
-                                    direction = "IN" if to_address == wallet.lower() else "OUT"
-                                    msg = (
-                                        f"🔁 {direction} {amount} {symbol} "
-                                        f"{'to' if direction == 'IN' else 'from'} {wallet}\n"
-                                        f"https://bscscan.com/tx/{tx['hash']}"
-                                    )
-                                    await app.bot.send_message(chat_id, msg)
-                    except Exception as e:
-                        print(f"Error for {wallet}: {e}")
+async def check_loop(app):
+    while True:
+        data = load_data()
+        async with aiohttp.ClientSession() as session:
+            for chat_id, user in data.items():
+                for wallet_name, wallet in user.get("wallets", {}).items():
+                    address = wallet["address"].lower()
+                    for token in wallet.get("tokens", {}).values():
+                        url = (
+                            f"https://api.bscscan.com/api?module=account&action=tokentx"
+                            f"&address={address}&contractaddress={token['address']}&page=1&offset=5&sort=desc"
+                            f"&apikey={BSCSCAN_API_KEY}"
+                        )
+                        try:
+                            async with session.get(url) as resp:
+                                res = await resp.json()
+                                for tx in res.get("result", []):
+                                    to_addr = tx["to"].lower()
+                                    from_addr = tx["from"].lower()
+                                    amount = int(tx["value"]) / (10 ** int(tx["tokenDecimal"]))
+                                    if token["min"] <= amount <= token["max"]:
+                                        direction = "IN" if to_addr == address else "OUT"
+                                        if token["sent"] < 10:
+                                            msg = (
+                                                f"🔔 {direction} {amount} {token['symbol']} "
+                                                f"{'to' if direction == 'IN' else 'from'} {address}\n"
+                                                f"https://bscscan.com/tx/{tx['hash']}"
+                                            )
+                                            await app.bot.send_message(chat_id=int(chat_id), text=msg)
+                                            token["sent"] += 1
+                        except Exception as e:
+                            print(f"Error: {e}")
+        save_data(data)
+        await asyncio.sleep(15)
 
-# Основна функція
 async def main():
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -139,17 +174,10 @@ async def main():
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 
-    async def periodic():
-        while True:
-            await check_transfers(app)
-            await asyncio.sleep(60)
-
-    asyncio.create_task(periodic())
+    asyncio.create_task(check_loop(app))
     await app.run_polling()
 
-# Запуск
 if __name__ == "__main__":
     import nest_asyncio
     nest_asyncio.apply()
-    asyncio.get_event_loop().run_until_complete(main())
-
+    asyncio.run(main())
