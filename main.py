@@ -23,6 +23,7 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 app = Flask(__name__)
 bot_app = ApplicationBuilder().token(TOKEN).build()
 
+# --- Telegram Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     keyboard = [
@@ -59,16 +60,21 @@ bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(CallbackQueryHandler(handle_callback))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
+# --- Webhook Route ---
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    update = Update.de_json(request.get_json(force=True), bot_app.bot)
-    asyncio.run(bot_app.process_update(update))
+    try:
+        update = Update.de_json(request.get_json(force=True), bot_app.bot)
+        asyncio.run(bot_app.process_update(update))
+    except Exception as e:
+        print(f"❌ Error in webhook: {e}")
     return "ok", 200
 
+# --- Init Webhook + Scheduler ---
 async def setup_webhook_and_scheduler():
     bot = Bot(token=TOKEN)
     await bot.set_webhook(url=WEBHOOK_URL)
-    asyncio.create_task(start_scheduler(bot_app))  # <-- тут головне виправлення
+    asyncio.create_task(start_scheduler(bot_app))  # Запускаємо фоновий планувальник
 
 async def main():
     await setup_webhook_and_scheduler()
