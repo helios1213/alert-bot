@@ -1,11 +1,20 @@
-import json
 import os
+import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+)
+import logging
 
 DATA_FILE = "data.json"
 token_states = {}
 
+# --- DATA FUNCTIONS ---
 def load_data():
     if not os.path.exists(DATA_FILE):
         return {}
@@ -16,14 +25,13 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
-# Головна функція для реєстрації текстових повідомлень
+# --- TOKEN LOGIC ---
 async def handle_token_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await handle_text(update, context)
     elif update.callback_query:
         await handle_callback_query(update, context)
 
-# --- Додавання токена ---
 async def prompt_token_wallet_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = load_data()
@@ -60,11 +68,9 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         data_store = load_data()
         user_data = data_store.get(user_id, {})
         tokens = user_data.get("tokens", [])
-
         updated_tokens = [t for t in tokens if t["name"] != token_name]
         data_store[user_id]["tokens"] = updated_tokens
         save_data(data_store)
-
         await query.message.reply_text(f"🗑 Токен `{token_name}` видалено.", parse_mode="Markdown")
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,7 +118,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("❌ Введи число.")
 
-# --- Видалення токена ---
 async def prompt_token_removal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = load_data()
@@ -129,7 +134,6 @@ async def prompt_token_removal(update: Update, context: ContextTypes.DEFAULT_TYP
     markup = InlineKeyboardMarkup(buttons)
     await update.callback_query.message.reply_text("🔻 Вибери токен для видалення:", reply_markup=markup)
 
-# --- Вивід даних ---
 async def show_user_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = load_data()
@@ -138,8 +142,38 @@ async def show_user_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for w in info.get("wallets", []):
         msg += f"🔹 {w['name']} — `{w['address']}`\n"
-
     for t in info.get("tokens", []):
         msg += f"🪙 {t['name']} [{t['wallet_name']}]: `{t['contract']}` ({t['min']} - {t['max']})\n"
-
     await update.callback_query.message.reply_text(msg, parse_mode="Markdown")
+
+# --- START/BASIC ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👋 Вітаю! Готовий працювати з гаманцями і токенами!")
+
+# --- MAIN APP ---
+async def run_bot():
+    # Читаємо токен з оточення
+    TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not TOKEN:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN environment variable is not set!")
+
+    # LOGGING (опціонально)
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    )
+
+    application = ApplicationBuilder().token(TOKEN).build()
+
+    # HANDLERS (налаштуй під себе!)
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(handle_callback_query))
+    application.add_handler(MessageHandler(filters.TEXT, handle_text))
+
+    # --- Додай свої callback-и на кнопки тут, якщо треба ---
+
+    print("Бот запущено!")
+    await application.run_polling()
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(run_bot())
