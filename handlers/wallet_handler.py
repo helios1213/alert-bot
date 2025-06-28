@@ -1,79 +1,46 @@
-import os
+# handlers/wallet_handler.py
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.db import add_wallet, remove_wallet, list_wallets
+import logging
 
-user_states = {}
+# Назви полів у user_data
+STATE_ADD_WALLET = "adding_wallet"
+STATE_REMOVE_WALLET = "removing_wallet"
+TEMP_WALLET_NAME = "wallet_to_remove"
 
-# --- Завантаження/збереження даних ---
-# --- Додати гаманець ---
 async def prompt_wallet_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_states[user_id] = {"step": "awaiting_wallet_address"}
-    print(f"[wallet] user={user_id} — prompting wallet address")
-    await update.callback_query.message.reply_text("🔹 Введи адресу гаманця (BSC):")
+    """Крок 1: користувач натиснув Додати гаманець."""
+    # Ставимо флаг — тепер наступне текстове повідомлення це адреса
+    context.user_data[STATE_ADD_WALLET] = True
+    await update.callback_query.message.reply_text("🔷 Введіть адресу гаманця (BSC):")
 
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in user_states:
-        print(f"[wallet] user={user_id} — no state, skipping")
-        return
-
-    state = user_states[user_id]
-    text = update.message.text.strip()
-    print(f"[wallet] user={user_id}, step={state['step']}, input={text}")
-
-    
-    if state["step"] == "awaiting_wallet_address":
-        if len(user_info["wallets"]) >= 5:
-            await update.message.reply_text("❌ Можна додати не більше 5 гаманців.")
-            return
-        state["address"] = text
-        state["step"] = "awaiting_wallet_name"
-        await update.message.reply_text("🔹 Введи назву для цього гаманця:")
-
-    elif state["step"] == "awaiting_wallet_name":
-        add_wallet(user_id, text, state["address"])
-        user_states.pop(user_id)
-        await update.message.reply_text("✅ Гаманець додано.")
-        print(f"[wallet] user={user_id} — wallet added")
-
-# --- Видалити гаманець ---
 async def prompt_wallet_removal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    wallets = list_wallets(user_id)
-
+    """Крок 1: користувач натиснув Видалити гаманець."""
+    wallets = list_wallets(update.effective_user.id)
     if not wallets:
-        await update.callback_query.message.reply_text("ℹ️ Немає доданих гаманців.")
-        return
-
+        return await update.callback_query.message.reply_text("📭 У вас немає гаманців.")
     buttons = [
-        [InlineKeyboardButton(w["name"], callback_data=f"remove_wallet_{w['name']}")]
+        InlineKeyboardButton(w["name"], callback_data=f"remove_wallet_{w['name']}")
         for w in wallets
     ]
-    markup = InlineKeyboardMarkup(buttons)
-    await update.callback_query.message.reply_text("🔻 Вибери гаманець для видалення:", reply_markup=markup)
+    # Ставимо флаг — вибір на видалення
+    context.user_data[STATE_REMOVE_WALLET] = True
+    await update.callback_query.message.reply_text(
+        "🗑 Оберіть гаманець для видалення:", 
+        reply_markup=InlineKeyboardMarkup([buttons])
+    )
 
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = str(update.effective_user.id)
-    await query.answer()
+    data = update.callback_query.data
 
-    data = query.data
-    if data.startswith("remove_wallet_"):
-        wallet_name = data.replace("remove_wallet_", "")
-        data_store = load_data()
-        wallets = data_store.get(user_id, {}).get("wallets", [])
+    # Обробка видалення після натискання кнопки конкретного гаманця
+    if data.startswith("remove_wallet_") and context.user_data.pop(STATE_REMOVE_WALLET, False):
+        name = data[len("remove_wallet_"):]
+        remove_wallet(update.effective_user.id, name)
+        await update.callback_query.message.reply_text(f"🗑 Гаманець '{name}' видалено.")
+        logging.info(f"[wallet] user={update.effective_user.id} removed wallet '{name}'")
+        return
 
-        data_store[user_id]["wallets"] = [w for w in wallets if w["name"] != wallet_name]
-        save_data(data_store)
-
-        await query.message.reply_text(f"🗑 Гаманець {wallet_name} видалено.")
-        print(f"[wallet] user={user_id} — wallet '{wallet_name}' removed")
-
-# --- Обгортка для обробки гаманця ---
-async def handle_wallet_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.callback_query:
-        await prompt_wallet_address(update, context)
-    elif update.message:
-        await handle_text(update, context)
+    # Якщо не наше, далі будуть інші колбеки викликані в main.py
