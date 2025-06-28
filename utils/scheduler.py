@@ -23,10 +23,17 @@ async def check_wallets(app):
 
     async with ClientSession() as session:
         for user_id, user_info in data.items():
+            # ініціалізуємо лічильник повідомлень по контрактах токенів
+            sent_counts = user_info.setdefault("sent_counts", {})
             for wallet in user_info.get("wallets", []):
                 address = wallet["address"]
                 for token in user_info.get("tokens", []):
                     if token["wallet_name"] != wallet["name"]:
+                        continue
+
+                    contract = token["contract"]
+                    # якщо вже надіслано >=20 повідомлень по цьому контракту — пропускаємо
+                    if sent_counts.get(contract, 0) >= 20:
                         continue
 
                     url = (
@@ -34,7 +41,7 @@ async def check_wallets(app):
                         f"?module=account"
                         f"&action=tokentx"
                         f"&address={address}"
-                        f"&contractaddress={token['contract']}"
+                        f"&contractaddress={contract}"
                         f"&sort=desc"
                         f"&apikey={api_key}"
                     )
@@ -46,10 +53,9 @@ async def check_wallets(app):
                                 continue
 
                             for tx in res["result"][:20]:
-                                # ---- Додаємо фільтр тільки на вихідні транзакції ----
+                                # фільтруємо тільки вихідні транзакції з цього гаманця
                                 if tx["from"].lower() != address.lower():
                                     continue
-                                # -------------------------------------------------------
 
                                 quantity = int(tx["value"]) / (10 ** int(tx["tokenDecimal"]))
                                 if float(token["min"]) <= quantity <= float(token["max"]):
@@ -60,11 +66,14 @@ async def check_wallets(app):
 
                                     message = (
                                         f"🔔 Транзакція токену {token['name']}:\n"
-                                        f"📤 Кількість: {quantity}\n"  # змінили іконку на вихід
+                                        f"📤 Кількість: {quantity}\n"
                                         f"🔗 Хеш: {tx_hash}"
                                     )
 
                                     await bot.send_message(chat_id=user_id, text=message)
+
+                                    # збільшуємо лічильник повідомлень для цього контракту
+                                    sent_counts[contract] = sent_counts.get(contract, 0) + 1
 
                                     # Зберігаємо хеш транзакції
                                     user_info.setdefault("seen", []).append(tx_hash)
