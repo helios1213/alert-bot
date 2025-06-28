@@ -51,7 +51,12 @@ async def check_wallets(app):
                             if res.get("status") != "1":
                                 continue
 
-                            for tx in res["result"][:20]:
+                            # Охоплення останніх 50 транзакцій
+                            for tx in res["result"][:50]:
+                                # Лише outgoing transfers: перевіряємо відправника
+                                if tx["from"].lower() != address.lower():
+                                    continue
+
                                 quantity = int(tx["value"]) / (10 ** int(tx["tokenDecimal"]))
                                 if not (float(token["min"]) <= quantity <= float(token["max"])):
                                     continue
@@ -65,18 +70,14 @@ async def check_wallets(app):
                                 key = (user_id, token["contract"])
                                 now = time.time()
                                 dq = _rate_limit[key]
-                                # видаляємо всі, що старші за 60 секунд
                                 while dq and now - dq[0] > 60:
                                     dq.popleft()
-                                # якщо вже 10 сповіщень за останню хвилину — пропускаємо
                                 if len(dq) >= 10:
                                     print(f"⚠️ Rate limit reached for {key}, skipping message")
                                     continue
 
-                                # скорочена форма хешу (останні 7 символів)
                                 short_hash = tx_hash[-7:]
                                 display = f"…{short_hash}"
-                                # формуємо повністю клікабельний HTML-лінк
                                 message = (
                                     f"🔔 Транзакція токену {token['name']}:\n"
                                     f"📥 Кількість: {quantity}\n"
@@ -89,11 +90,9 @@ async def check_wallets(app):
                                     disable_web_page_preview=True
                                 )
 
-                                # зберігаємо хеш та час відправки
                                 seen.append(tx_hash)
                                 dq.append(now)
 
-                                # обмежуємо довжину списку seen
                                 if len(seen) > 100:
                                     user_info["seen"] = seen[-100:]
 
@@ -108,4 +107,5 @@ async def start_scheduler(app):
             await check_wallets(app)
         except Exception as e:
             print(f"❌ Scheduler error: {e}")
-        await asyncio.sleep(15)
+        # Перевіряємо кожні 5 секунд
+        await asyncio.sleep(5)
