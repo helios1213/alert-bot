@@ -1,168 +1,63 @@
-import os
+# handlers/token_handler.py
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes
 from utils.db import add_token, remove_token, list_tokens
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-    filters,
-)
 import logging
 
-token_states = {}
-
-# --- DATA FUNCTIONS ---
-# --- TOKEN LOGIC ---
-async def handle_token_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        await handle_text(update, context)
-    elif update.callback_query:
-        await handle_callback_query(update, context)
+# Назви полів у user_data
+STATE_ADD_TOKEN     = "adding_token"
+STATE_REMOVE_TOKEN  = "removing_token"
 
 async def prompt_token_wallet_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    data = {}  # data.json replaced by SQLite
-    wallets = data.get(user_id, {}).get("wallets", [])
-
-    if not wallets:
-        await update.callback_query.message.reply_text("ℹ️ Спочатку додай гаманець.")
-        return
-
-    token_states[user_id] = {"step": "select_wallet"}
-    buttons = [
-        [InlineKeyboardButton(w["name"], callback_data=f"token_wallet_{w['name']}")] for w in wallets
-    ]
-    markup = InlineKeyboardMarkup(buttons)
-    await update.callback_query.message.reply_text("🔹 Вибери гаманець для токену:", reply_markup=markup)
-
-async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    user_id = str(update.effective_user.id)
-    await query.answer()
-    data = query.data
-    state = token_states.get(user_id, {})
-
-    if data.startswith("token_wallet_") and state.get("step") == "select_wallet":
-        wallet_name = data.replace("token_wallet_", "")
-        token_states[user_id] = {
-            "wallet_name": wallet_name,
-            "step": "awaiting_contract"
-        }
-        await query.message.reply_text("🔹 Введи контракт токену:")
-
-    elif data.startswith("remove_token_"):
-        token_name = data.replace("remove_token_", "")
-        data_store = load_data()
-        user_data = data_store.get(user_id, {})
-        tokens = user_list_tokens(user_id)
-        updated_tokens = [t for t in tokens if t["name"] != token_name]
-        data_store[user_id]["tokens"] = updated_tokens
-        save_data(data_store)
-        await query.message.reply_text(f"🗑 Токен `{token_name}` видалено.", parse_mode="Markdown")
-
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    text = update.message.text.strip()
-    state = token_states.get(user_id)
-    if not state:
-        return
-
-    data_store = load_data()
-    user_info = data_store.setdefault(user_id, {"wallets": [], "tokens": [], "seen": []})
-
-    if state["step"] == "awaiting_contract":
-        state["contract"] = text
-        state["step"] = "awaiting_name"
-        await update.message.reply_text("🔹 Введи назву токену:")
-
-    elif state["step"] == "awaiting_name":
-        state["token_name"] = text
-        state["step"] = "awaiting_min"
-        await update.message.reply_text("🔹 Введи мінімальну кількість токенів:")
-
-    elif state["step"] == "awaiting_min":
-        try:
-            float(text)
-            state["min"] = text
-            state["step"] = "awaiting_max"
-            await update.message.reply_text("🔹 Введи максимальну кількість токенів:")
-        except ValueError:
-            await update.message.reply_text("❌ Введи число.")
-
-    elif state["step"] == "awaiting_max":
-        try:
-            float(text)
-            user_info["tokens"].append({
-                "wallet_name": state["wallet_name"],
-                "contract": state["contract"],
-                "name": state["token_name"],
-                "min": state["min"],
-                "max": text
-            })
-            save_data(data_store)
-            token_states.pop(user_id)
-            await update.message.reply_text("✅ Токен додано.")
-        except ValueError:
-            await update.message.reply_text("❌ Введи число.")
+    """Крок 1: користувач натиснув Додати токен."""
+    context.user_data[STATE_ADD_TOKEN] = True
+    await update.callback_query.message.reply_text("🔷 Введіть адресу контракту токена (BSC):")
 
 async def prompt_token_removal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    data = {}  # data.json replaced by SQLite
-    tokens = list_tokens(user_id)
-
+    """Крок 1: користувач натиснув Видалити токен."""
+    tokens = list_tokens(update.effective_user.id)
     if not tokens:
-        await update.callback_query.message.reply_text("ℹ️ Немає токенів для видалення.")
-        return
-
+        return await update.callback_query.message.reply_text("📭 У вас немає токенів.")
     buttons = [
-        [InlineKeyboardButton(f"{t['name']} [{t['wallet_name']}]", callback_data=f"remove_token_{t['name']}")]
+        InlineKeyboardButton(t["name"], callback_data=f"remove_token_{t['name']}")
         for t in tokens
     ]
-    markup = InlineKeyboardMarkup(buttons)
-    await update.callback_query.message.reply_text("🔻 Вибери токен для видалення:", reply_markup=markup)
-
-async def show_user_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    data = {}  # data.json replaced by SQLite
-    info = data.get(user_id, {})
-    msg = "📋 Список:\n\n"
-
-    for w in info.get("wallets", []):
-        msg += f"🔹 {w['name']} — `{w['address']}`\n"
-    for t in info.get("tokens", []):
-        msg += f"🪙 {t['name']} [{t['wallet_name']}]: `{t['contract']}` ({t['min']} - {t['max']})\n"
-    await update.callback_query.message.reply_text(msg, parse_mode="Markdown")
-
-# --- START/BASIC ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Вітаю! Готовий працювати з гаманцями і токенами!")
-
-# --- MAIN APP ---
-async def run_bot():
-    # Читаємо токен з оточення
-    TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    if not TOKEN:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN environment variable is not set!")
-
-    # LOGGING (опціонально)
-    logging.basicConfig(
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    context.user_data[STATE_REMOVE_TOKEN] = True
+    await update.callback_query.message.reply_text(
+        "🗑 Оберіть токен для видалення:", 
+        reply_markup=InlineKeyboardMarkup([buttons])
     )
 
-    application = ApplicationBuilder().token(TOKEN).build()
+async def show_user_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Колбек для кнопки 'list' — показати все."""
+    wallets = list_tokens(update.effective_user.id)
+    tokens  = list_tokens(update.effective_user.id)
+    text = ["🔷 Ваші гаманці:"]
+    text += [f"• {w['name']}: `{w['address']}`" for w in wallets] or ["(немає)"]
+    text += ["\n🔷 Ваші токени:"]
+    text += [f"• {t['name']}: `{t['contract']}`" for t in tokens] or ["(немає)"]
+    await update.callback_query.message.reply_text("\n".join(text), parse_mode="Markdown")
 
-    # HANDLERS (налаштуй під себе!)
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(handle_callback_query))
-    application.add_handler(MessageHandler(filters.TEXT, handle_text))
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text    = update.message.text.strip()
 
-    # --- Додай свої callback-и на кнопки тут, якщо треба ---
+    # 1) Додавання токена (адреси контракту)
+    if context.user_data.pop(STATE_ADD_TOKEN, False):
+        # Для спрощення ім'я токена беремо як частину контракту
+        name = text[:8]  # або будь-який інший підхід до імені
+        add_token(user_id, name, text)
+        await update.message.reply_text(f"✅ Токен з контрактом `{text}` додано.", parse_mode="Markdown")
+        logging.info(f"[token] user={user_id} added token '{name}'")
+        return
 
-    print("Бот запущено!")
-    await application.run_polling()
+    # 2) Видалення токена після натискання конкретної кнопки
+    if text.startswith("remove_token_") and context.user_data.pop(STATE_REMOVE_TOKEN, False):
+        name = text[len("remove_token_"):]
+        remove_token(user_id, name)
+        await update.message.reply_text(f"🗑 Токен '{name}' видалено.")
+        logging.info(f"[token] user={user_id} removed token '{name}'")
+        return
 
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(run_bot())
+    # 3) Якщо це звичайне повідомлення — нічого з ним не робимо
