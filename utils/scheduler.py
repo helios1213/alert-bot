@@ -10,7 +10,7 @@ from telegram import Bot
 DATA_FILE = "data.json"
 
 # Обмеження: не більше 10 повідомлень на токен за останню хвилину
-_rate_limit = defaultdict(deque)  # ключ: (user_id, token_contract), значення: deque(times))
+_rate_limit = defaultdict(deque)  # ключ: (user_id, token_contract), значення: deque(times)
 
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -57,7 +57,7 @@ async def check_wallets(app):
                                     continue
 
                                 tx_hash = tx["hash"]
-                                seen = user_info.get("seen", [])
+                                seen = user_info.setdefault("seen", [])
                                 if tx_hash in seen:
                                     continue
 
@@ -73,13 +73,17 @@ async def check_wallets(app):
                                     print(f"⚠️ Rate limit reached for {key}, skipping message")
                                     continue
 
-                                # готуємо і відправляємо сповіщення
+                                # формуємо клікабельний хеш
                                 message = (
                                     f"🔔 Транзакція токену {token['name']}:\n"
                                     f"📥 Кількість: {quantity}\n"
-                                    f"🔗 Хеш: {tx_hash}"
+                                    f"🔗 [`{tx_hash}`](https://bscscan.com/tx/{tx_hash})"
                                 )
-                                await bot.send_message(chat_id=user_id, text=message)
+                                await bot.send_message(
+                                    chat_id=user_id,
+                                    text=message,
+                                    parse_mode="Markdown"
+                                )
 
                                 # зберігаємо хеш та час відправки
                                 seen.append(tx_hash)
