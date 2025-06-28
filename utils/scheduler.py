@@ -73,16 +73,19 @@ async def check_wallets(app):
                                     print(f"⚠️ Rate limit reached for {key}, skipping message")
                                     continue
 
-                                # формуємо клікабельний хеш
+                                # скорочена форма хешу
+                                short_hash = tx_hash[-7:]
+                                display = f"…{short_hash}"
+                                # формуємо клікабельний рядок повністю у HTML
                                 message = (
                                     f"🔔 Транзакція токену {token['name']}:\n"
                                     f"📥 Кількість: {quantity}\n"
-                                    f"🔗 [`{tx_hash}`](https://bscscan.com/tx/{tx_hash})"
+                                    f'<a href="https://bscscan.com/tx/{tx_hash}">Tx hash: {display}</a>'
                                 )
                                 await bot.send_message(
                                     chat_id=user_id,
                                     text=message,
-                                    parse_mode="Markdown"
+                                    parse_mode="HTML"
                                 )
 
                                 # зберігаємо хеш та час відправки
