@@ -1,3 +1,4 @@
+```python
 import logging
 import os
 import asyncio
@@ -39,6 +40,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🗑 Видалити гаманець", callback_data="remove_wallet")],
         [InlineKeyboardButton("🗑 Видалити токен",    callback_data="remove_token")],
         [InlineKeyboardButton("📋 Переглянути список", callback_data="list")],
+        [InlineKeyboardButton("🧹 Очистити логи",       callback_data="clear_logs")]
     ]
     await update.message.reply_text(
         "👋 Вітаю! Обери дію:", reply_markup=InlineKeyboardMarkup(keyboard)
@@ -47,6 +49,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = update.callback_query.data
     await update.callback_query.answer()
+
+    # Додатковий обробник для очищення логів
+    if data == "clear_logs":
+        open("bot.log", "w").close()
+        await update.callback_query.message.reply_text("🧹 Логи успішно очищені!")
+        logging.info(f"[admin] user={update.effective_user.id} cleared logs")
+        return
+
     if data == "add_wallet":
         return await wallet_handler.prompt_wallet_address(update, context)
     if data == "remove_wallet":
@@ -74,6 +84,7 @@ async def on_startup(app):
         BotCommand("menu",  "Відкрити меню"),
     ])
     logging.info("🔔 Вебхук встановлено, запускаємо scheduler…")
+    init_db()
     asyncio.create_task(start_scheduler(app))
 
 async def on_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -99,3 +110,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
