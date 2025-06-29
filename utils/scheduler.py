@@ -91,8 +91,8 @@ async def check_wallets(app):
                                 seen.append(tx_hash)
                                 dq.append(now)
 
-                                if len(seen) > 100:
-                                    user_info["seen"] = seen[-100:]
+                                if len(seen) > 1000:
+                                    user_info["seen"] = seen[-1000:]
 
                     except Exception as e:
                         print(f"⚠️ Помилка при запиті до API: {e}")
