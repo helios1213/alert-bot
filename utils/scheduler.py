@@ -53,7 +53,6 @@ async def check_wallets(app):
 
                             # Охоплення останніх 50 транзакцій
                             for tx in res["result"][:50]:
-                                # Лише outgoing transfers: перевіряємо відправника
                                 if tx["from"].lower() != address.lower():
                                     continue
 
@@ -66,7 +65,6 @@ async def check_wallets(app):
                                 if tx_hash in seen:
                                     continue
 
-                                # RATE LIMITING
                                 key = (user_id, token["contract"])
                                 now = time.time()
                                 dq = _rate_limit[key]
@@ -84,7 +82,7 @@ async def check_wallets(app):
                                     f'<a href="https://bscscan.com/tx/{tx_hash}">Tx hash: {display}</a>'
                                 )
                                 await bot.send_message(
-                                    chat_id=user_id,
+                                    chat_id=-1002506895973,  # 🔄 замінили тут
                                     text=message,
                                     parse_mode="HTML",
                                     disable_web_page_preview=True
@@ -107,5 +105,4 @@ async def start_scheduler(app):
             await check_wallets(app)
         except Exception as e:
             print(f"❌ Scheduler error: {e}")
-        # Перевіряємо кожні 5 секунд
         await asyncio.sleep(5)
