@@ -69,20 +69,32 @@ async def on_startup(app):
     await app.bot.set_my_commands([
         BotCommand("start", "Відкрити меню"),
         BotCommand("menu",  "Відкрити меню"),
+        BotCommand("send",  "Надіслати повідомлення в канал"),
     ])
     logging.info("🔔 Вебхук встановлено, запускаємо scheduler…")
     asyncio.create_task(start_scheduler(app))
 
 async def on_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # simply call start to show the same menu
     await start(update, context)
 
+# ✅ Додано функцію надсилання повідомлення в канал
+async def send_to_channel(context, message: str):
+    channel_id = -1002506895973  # твій канал
+    await context.bot.send_message(chat_id=channel_id, text=message)
+
+async def send(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        return await update.message.reply_text("❗ Використай: /send <повідомлення>")
+    message = " ".join(context.args)
+    await send_to_channel(context, f"📢 {message}")
+    await update.message.reply_text("✅ Повідомлення надіслано в канал.")
 
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu",  on_menu))
+    app.add_handler(CommandHandler("send",  send))  # 👈 додано нову команду
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
 
