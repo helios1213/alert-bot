@@ -1,23 +1,9 @@
-import os
-import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-DATA_FILE = "data.json"
+from data_manager import load_data, save_data
+
 user_states = {}
-
-# --- Завантаження/збереження даних ---
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w") as f:
-            json.dump({}, f)
-        return {}
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
-
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
 
 # --- Додати гаманець ---
 async def prompt_wallet_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
