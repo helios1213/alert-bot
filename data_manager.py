@@ -22,11 +22,11 @@ def load_data() -> dict:
         print(f"[DEBUG] load_data прочитано {len(d)} користувачів", file=sys.stderr)
         return d
 
- def save_data(data: dict) -> None:
+def save_data(data: dict) -> None:
     print("[DEBUG] save_data() викликано. Спроба записати", file=sys.stderr)
     try:
         with FileLock(str(LOCK_FILE)):
-            tmp = DATA_FILE.with_suffix(".tmp")   # data.tmp
+            tmp = DATA_FILE.with_suffix(".tmp")
             print(f"[DEBUG] Записую у тимчасовий файл {tmp}", file=sys.stderr)
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
