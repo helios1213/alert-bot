@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import time
 from collections import defaultdict, deque
@@ -7,20 +6,11 @@ from collections import defaultdict, deque
 from aiohttp import ClientSession
 from telegram import Bot
 
-DATA_FILE = "data.json"
+# 🔄 Імпортуємо централізовані функції, що пишуть у /data/data.json на Render Persistent Disk
+from data_manager import load_data, save_data
 
 # Обмеження: не більше 10 повідомлень на токен за останню хвилину
 _rate_limit = defaultdict(deque)  # ключ: (user_id, token_contract), значення: deque(times)
-
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
-
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
 
 async def check_wallets(app):
     bot: Bot = app.bot
@@ -82,7 +72,7 @@ async def check_wallets(app):
                                     f'<a href="https://bscscan.com/tx/{tx_hash}">Tx hash: {display}</a>'
                                 )
                                 await bot.send_message(
-                                    chat_id=-1002506895973,  # 🔄 замінили тут
+                                    chat_id=-1002506895973,  # 🔄 канал, куди пишемо
                                     text=message,
                                     parse_mode="HTML",
                                     disable_web_page_preview=True
@@ -98,6 +88,7 @@ async def check_wallets(app):
                         print(f"⚠️ Помилка при запиті до API: {e}")
 
     save_data(data)
+
 
 async def start_scheduler(app):
     while True:
