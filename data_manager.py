@@ -3,9 +3,13 @@ import json
 from filelock import FileLock
 import sys
 
-BASE_DIR  = Path(__file__).resolve().parent
+# ──────────────────────────────────────
+# Використовуємо монтування Render Persistent Disk
+BASE_DIR  = Path("/data")             # сюди Render змонтував Persistent Disk
+BASE_DIR.mkdir(exist_ok=True)           # створити папку, якщо ще не створена
 DATA_FILE = BASE_DIR / "data.json"
 LOCK_FILE = BASE_DIR / "data.lock"
+# ──────────────────────────────────────
 
 def load_data() -> dict:
     print("[DEBUG] load_data() ->", DATA_FILE, file=sys.stderr)
@@ -18,7 +22,7 @@ def load_data() -> dict:
         print(f"[DEBUG] load_data прочитано {len(d)} користувачів", file=sys.stderr)
         return d
 
-def save_data(data: dict) -> None:
+ def save_data(data: dict) -> None:
     print("[DEBUG] save_data() викликано. Спроба записати", file=sys.stderr)
     try:
         with FileLock(str(LOCK_FILE)):
