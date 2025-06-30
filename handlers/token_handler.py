@@ -1,5 +1,3 @@
-import os
-import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -11,19 +9,9 @@ from telegram.ext import (
 )
 import logging
 
-DATA_FILE = "data.json"
+from data_manager import load_data, save_data
+
 token_states = {}
-
-# --- DATA FUNCTIONS ---
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
-
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
 
 # --- TOKEN LOGIC ---
 async def handle_token_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
